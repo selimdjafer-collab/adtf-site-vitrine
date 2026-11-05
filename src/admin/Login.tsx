@@ -5,7 +5,6 @@ import { Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-react';
 const LOGO = '/ChatGPT_Image_15_juin_2026,_12_07_44.png';
 
 export default function Login() {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
@@ -17,13 +16,8 @@ export default function Login() {
     setError(null);
     setLoading(true);
     try {
-      if (mode === 'signup') {
-        const { error: err } = await supabase.auth.signUp({ email, password });
-        if (err) throw err;
-      } else {
-        const { error: err } = await supabase.auth.signInWithPassword({ email, password });
-        if (err) throw err;
-      }
+      const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+      if (err) throw err;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue');
     } finally {
@@ -47,12 +41,10 @@ export default function Login() {
           {/* Form */}
           <div className="px-8 py-8">
             <h1 className="text-2xl font-bold text-brand-blue-dark mb-1">
-              {mode === 'signin' ? 'Connexion' : 'Créer un compte admin'}
+              Connexion
             </h1>
             <p className="text-slate-500 text-sm mb-7">
-              {mode === 'signin'
-                ? 'Accédez à la gestion du site.'
-                : 'Première utilisation — créez votre compte administrateur.'}
+              Accédez à la gestion du site.
             </p>
 
             {error && (
@@ -87,7 +79,7 @@ export default function Login() {
                     type={showPwd ? 'text' : 'password'}
                     required
                     minLength={6}
-                    autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                    autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="form-input pl-11 pr-11"
@@ -108,37 +100,9 @@ export default function Login() {
                 disabled={loading}
                 className="btn-primary w-full justify-center py-3 rounded-xl text-base disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {loading
-                  ? 'Chargement…'
-                  : mode === 'signin'
-                  ? 'Se connecter'
-                  : 'Créer le compte'}
+                {loading ? 'Chargement…' : 'Se connecter'}
               </button>
             </form>
-
-            <div className="mt-6 text-center border-t border-slate-100 pt-6">
-              {mode === 'signin' ? (
-                <p className="text-sm text-slate-500">
-                  Première connexion ?{' '}
-                  <button
-                    onClick={() => { setMode('signup'); setError(null); }}
-                    className="text-brand-blue font-semibold hover:underline"
-                  >
-                    Créer un compte
-                  </button>
-                </p>
-              ) : (
-                <p className="text-sm text-slate-500">
-                  Déjà un compte ?{' '}
-                  <button
-                    onClick={() => { setMode('signin'); setError(null); }}
-                    className="text-brand-blue font-semibold hover:underline"
-                  >
-                    Se connecter
-                  </button>
-                </p>
-              )}
-            </div>
           </div>
         </div>
       </div>
