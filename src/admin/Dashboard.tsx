@@ -44,10 +44,10 @@ export default function Dashboard({ onNavigate }: Props) {
   ];
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       {/* Page header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-brand-blue-dark font-display">Tableau de bord</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-brand-blue-dark font-display">Tableau de bord</h1>
         <p className="text-slate-500 mt-1">Vue d'ensemble de votre site ADTF.</p>
       </div>
 

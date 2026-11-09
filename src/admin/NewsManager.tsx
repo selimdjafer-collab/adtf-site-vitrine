@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Actualite } from '../lib/supabase';
+import { BUCKET, check, frError, storagePath } from './adminUtils';
 import { Plus, Edit2, Trash2, Eye, EyeOff, AlertCircle, Newspaper, Calendar } from 'lucide-react';
 
 type Props = {
@@ -14,31 +15,42 @@ export default function NewsManager({ onEdit, onCreate }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
-    setLoading(true);
     const { data, error: err } = await supabase
       .from('actualites')
       .select('*')
       .order('created_at', { ascending: false });
-    if (err) { setError(err.message); } else { setArticles(data ?? []); }
+    if (err) { setError(frError(err, 'Impossible de charger les actualités.')); } else { setArticles(data ?? []); }
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
 
-  const togglePublish = async (article: Actualite) => {
-    const published = !article.published;
-    await supabase.from('actualites').update({
-      published,
-      published_at: published ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString(),
-    }).eq('id', article.id);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const run = async (id: string, action: () => Promise<void>, fallback: string) => {
+    setBusyId(id);
+    setError(null);
+    try { await action(); } catch (err) { setError(frError(err, fallback)); }
     await load();
+    setBusyId(null);
   };
 
-  const deleteArticle = async (article: Actualite) => {
-    if (!confirm(`Supprimer "${article.title}" ?`)) return;
-    await supabase.from('actualites').delete().eq('id', article.id);
-    await load();
+  const togglePublish = (article: Actualite) => run(article.id, async () => {
+    const published = !article.published;
+    check(await supabase.from('actualites').update({
+      published,
+      published_at: published ? (article.published_at ?? new Date().toISOString()) : null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', article.id));
+  }, 'Erreur lors de la publication.');
+
+  const deleteArticle = (article: Actualite) => {
+    if (!confirm(`Supprimer l'article « ${article.title} » ?`)) return;
+    return run(article.id, async () => {
+      check(await supabase.from('actualites').delete().eq('id', article.id));
+      const path = article.image_url ? storagePath(article.image_url) : null;
+      if (path) await supabase.storage.from(BUCKET).remove([path]);
+    }, 'Erreur lors de la suppression.');
   };
 
   const fmt = (d: string | null) => {
@@ -47,10 +59,10 @@ export default function NewsManager({ onEdit, onCreate }: Props) {
   };
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       <div className="mb-8 flex items-start justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-brand-blue-dark font-display">Actualités</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-brand-blue-dark font-display">Actualités</h1>
           <p className="text-slate-500 mt-1">{articles.length} article{articles.length !== 1 ? 's' : ''} au total</p>
         </div>
         <button onClick={onCreate} className="btn-primary text-sm py-2.5 px-5 rounded-xl">
@@ -84,21 +96,21 @@ export default function NewsManager({ onEdit, onCreate }: Props) {
           {articles.map((a) => (
             <div
               key={a.id}
-              className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 flex items-start gap-4 hover:shadow-md transition-shadow"
+              className={`bg-white rounded-2xl shadow-sm border border-slate-100 p-4 sm:p-5 flex flex-wrap sm:flex-nowrap items-start gap-4 hover:shadow-md transition-shadow ${busyId === a.id ? 'opacity-60 pointer-events-none' : ''}`}
             >
               {/* Cover thumbnail */}
               {a.image_url ? (
-                <div className="w-20 h-16 rounded-xl overflow-hidden shrink-0">
+                <div className="hidden sm:block w-20 h-16 rounded-xl overflow-hidden shrink-0">
                   <img src={a.image_url} alt={a.title} className="w-full h-full object-cover" loading="lazy" />
                 </div>
               ) : (
-                <div className="w-20 h-16 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+                <div className="hidden sm:flex w-20 h-16 rounded-xl bg-slate-100 items-center justify-center shrink-0">
                   <Newspaper size={20} className="text-slate-400" />
                 </div>
               )}
 
               {/* Content */}
-              <div className="flex-1 min-w-0">
+              <div className="w-full sm:w-auto sm:flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <h3 className="font-bold text-brand-blue-dark text-base leading-snug">{a.title}</h3>
                   <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold shrink-0 ${
@@ -111,14 +123,14 @@ export default function NewsManager({ onEdit, onCreate }: Props) {
                   </span>
                 </div>
                 {a.excerpt && <p className="text-slate-500 text-sm mt-1 line-clamp-2">{a.excerpt}</p>}
-                <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-slate-400">
                   <span className="flex items-center gap-1"><Calendar size={11} /> Créé le {fmt(a.created_at)}</span>
                   {a.published_at && <span>Publié le {fmt(a.published_at)}</span>}
                 </div>
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end border-t border-slate-100 pt-3 sm:border-0 sm:pt-0">
                 <button
                   onClick={() => togglePublish(a)}
                   title={a.published ? 'Dépublier' : 'Publier'}

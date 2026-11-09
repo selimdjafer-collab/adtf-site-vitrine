@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Actualite } from '../lib/supabase';
+import { frError, uploadImage } from './adminUtils';
 import { ArrowLeft, Upload, Eye, EyeOff, AlertCircle, Save, Image as ImageIcon } from 'lucide-react';
 
 type Props = {
@@ -30,13 +31,20 @@ export default function NewsEditor({ editingId, onBack, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
+  const [loadingArticle, setLoadingArticle] = useState(!!editingId);
+  /** Date de publication d'origine : elle ne doit pas changer à chaque modification. */
+  const [originalPublishedAt, setOriginalPublishedAt] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!editingId) return;
-    supabase.from('actualites').select('*').eq('id', editingId).maybeSingle().then(({ data }) => {
-      if (!data) return;
+    setLoadingArticle(true);
+    supabase.from('actualites').select('*').eq('id', editingId).maybeSingle().then(({ data, error: err }) => {
+      setLoadingArticle(false);
+      if (err) { setError(frError(err, "Impossible de charger l'article.")); return; }
+      if (!data) { setError("Cet article n'existe plus."); return; }
       const a = data as Actualite;
+      setOriginalPublishedAt(a.published_at);
       setTitle(a.title);
       setSlug(a.slug);
       setExcerpt(a.excerpt);
@@ -56,14 +64,9 @@ export default function NewsEditor({ editingId, onBack, onSaved }: Props) {
     setUploadingImg(true);
     setError(null);
     try {
-      const ext = file.name.split('.').pop();
-      const path = `actualites/${Date.now()}.${ext}`;
-      const { error: err } = await supabase.storage.from('site-images').upload(path, file);
-      if (err) throw err;
-      const { data: { publicUrl } } = supabase.storage.from('site-images').getPublicUrl(path);
-      setImageUrl(publicUrl);
+      setImageUrl(await uploadImage(file, 'actualites'));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Erreur upload image');
+      setError(frError(err, "Erreur lors de l'envoi de l'image."));
     } finally {
       setUploadingImg(false);
     }
@@ -71,17 +74,19 @@ export default function NewsEditor({ editingId, onBack, onSaved }: Props) {
 
   const handleSave = async () => {
     if (!title.trim()) { setError('Le titre est requis.'); return; }
-    if (!slug.trim()) { setError('Le slug est requis.'); return; }
+    const cleanSlug = slugify(slug) || slugify(title);
+    if (!cleanSlug) { setError("L'adresse (slug) est requise."); return; }
+    if (loadingArticle) return;
     setSaving(true);
     setError(null);
     const payload = {
       title: title.trim(),
-      slug: slug.trim(),
+      slug: cleanSlug,
       excerpt: excerpt.trim(),
       content: content.trim(),
       image_url: imageUrl.trim() || null,
       published,
-      published_at: published ? new Date().toISOString() : null,
+      published_at: published ? (originalPublishedAt ?? new Date().toISOString()) : null,
       updated_at: new Date().toISOString(),
     };
     try {
@@ -94,13 +99,13 @@ export default function NewsEditor({ editingId, onBack, onSaved }: Props) {
       }
       onSaved();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde');
+      setError(frError(err, 'Erreur lors de la sauvegarde.'));
       setSaving(false);
     }
   };
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="p-4 sm:p-8 max-w-4xl">
       {/* Header */}
       <div className="mb-8 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
@@ -108,7 +113,7 @@ export default function NewsEditor({ editingId, onBack, onSaved }: Props) {
             <ArrowLeft size={17} />
           </button>
           <div>
-            <h1 className="text-3xl font-bold text-brand-blue-dark font-display">
+            <h1 className="text-2xl sm:text-3xl font-bold text-brand-blue-dark font-display">
               {editingId ? 'Modifier l\'article' : 'Nouvel article'}
             </h1>
             <p className="text-slate-500 text-sm mt-0.5">
@@ -130,7 +135,7 @@ export default function NewsEditor({ editingId, onBack, onSaved }: Props) {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || loadingArticle || uploadingImg}
             className="btn-primary text-sm py-2.5 px-5 rounded-xl disabled:opacity-60"
           >
             <Save size={15} />
@@ -145,6 +150,11 @@ export default function NewsEditor({ editingId, onBack, onSaved }: Props) {
         </div>
       )}
 
+      {loadingArticle ? (
+        <div className="flex justify-center py-20">
+          <div className="w-8 h-8 border-4 border-brand-blue border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : (
       <div className="space-y-6">
         {/* Title */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
@@ -192,7 +202,7 @@ export default function NewsEditor({ editingId, onBack, onSaved }: Props) {
                 <Upload size={15} /> {uploadingImg ? 'Upload…' : 'Uploader une image'}
               </button>
               <input ref={fileRef} type="file" accept="image/*" className="hidden"
-                onChange={(e) => { if (e.target.files?.[0]) uploadCover(e.target.files[0]); }} />
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadCover(f); }} />
             </div>
             {imageUrl ? (
               <div className="w-28 h-20 rounded-xl overflow-hidden border border-slate-200 shrink-0">
@@ -231,6 +241,7 @@ export default function NewsEditor({ editingId, onBack, onSaved }: Props) {
           <p className="text-slate-400 text-xs mt-2">Séparez les paragraphes avec une ligne vide.</p>
         </div>
       </div>
+      )}
     </div>
   );
 }

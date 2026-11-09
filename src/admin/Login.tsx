@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { frError } from './adminUtils';
 import { Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-react';
 
 const LOGO = '/ChatGPT_Image_15_juin_2026,_12_07_44.png';
@@ -16,10 +17,10 @@ export default function Login() {
     setError(null);
     setLoading(true);
     try {
-      const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+      const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (err) throw err;
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue');
+      setError(frError(err, 'Connexion impossible.'));
     } finally {
       setLoading(false);
     }
